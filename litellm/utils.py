@@ -3842,7 +3842,9 @@ def completion_cost(
                     * n
                 )
             else:
-                raise Exception(f"Model={model} not found in completion cost model map")
+                raise Exception(
+                    f"Model={image_gen_model_name} not found in completion cost model map"
+                )
         # Calculate cost based on prompt_tokens, completion_tokens
         if (
             "togethercomputer" in model
