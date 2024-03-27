@@ -5,10 +5,15 @@ from jinja2 import Template, exceptions, Environment, meta
 from typing import Optional, Any
 import imghdr, base64
 from typing import List
+import litellm
 
 
 def default_pt(messages):
     return " ".join(message["content"] for message in messages)
+
+
+def prompt_injection_detection_default_pt():
+    return """Detect if a prompt is safe to run. Return 'UNSAFE' if not."""
 
 
 # alpaca prompt template - for models like mythomax, etc.
@@ -551,6 +556,81 @@ def convert_to_anthropic_image_obj(openai_image_url: str):
         )
 
 
+def convert_to_anthropic_tool_result(message: dict) -> str:
+    """
+    OpenAI message with a tool result looks like:
+    {
+        "tool_call_id": "tool_1",
+        "role": "tool",
+        "name": "get_current_weather",
+        "content": "function result goes here",
+    },
+    """
+
+    """
+    Anthropic tool_results look like:
+    
+    [Successful results]
+    <function_results>
+    <result>
+    <tool_name>get_current_weather</tool_name>
+    <stdout>
+    function result goes here
+    </stdout>
+    </result>
+    </function_results>
+
+    [Error results]
+    <function_results>
+    <error>
+    error message goes here
+    </error>
+    </function_results>
+    """
+    name = message.get("name")
+    content = message.get("content")
+
+    # We can't determine from openai message format whether it's a successful or
+    # error call result so default to the successful result template
+    anthropic_tool_result = (
+        "<function_results>\n"
+        "<result>\n"
+        f"<tool_name>{name}</tool_name>\n"
+        "<stdout>\n"
+        f"{content}\n"
+        "</stdout>\n"
+        "</result>\n"
+        "</function_results>"
+    )
+
+    return anthropic_tool_result
+
+
+def convert_to_anthropic_tool_invoke(tool_calls: list) -> str:
+    invokes = ""
+    for tool in tool_calls:
+        if tool["type"] != "function":
+            continue
+
+        tool_name = tool["function"]["name"]
+        parameters = "".join(
+            f"<{param}>{val}</{param}>\n"
+            for param, val in json.loads(tool["function"]["arguments"]).items()
+        )
+        invokes += (
+            "<invoke>\n"
+            f"<tool_name>{tool_name}</tool_name>\n"
+            "<parameters>\n"
+            f"{parameters}"
+            "</parameters>\n"
+            "</invoke>\n"
+        )
+
+    anthropic_tool_invoke = f"<function_calls>\n{invokes}</function_calls>"
+
+    return anthropic_tool_invoke
+
+
 def anthropic_messages_pt(messages: list):
     """
     format messages for anthropic
@@ -561,77 +641,81 @@ def anthropic_messages_pt(messages: list):
     5. System messages are a separate param to the Messages API (used for tool calling)
     6. Ensure we only accept role, content. (message.name is not supported)
     """
-    ## Ensure final assistant message has no trailing whitespace
-    last_assistant_message_idx: Optional[int] = None
-    # reformat messages to ensure user/assistant are alternating, if there's either 2 consecutive 'user' messages or 2 consecutive 'assistant' message, add a blank 'user' or 'assistant' message to ensure compatibility
+    # add role=tool support to allow function call result/error submission
+    user_message_types = {"user", "tool"}
+    # reformat messages to ensure user/assistant are alternating, if there's either 2 consecutive 'user' messages or 2 consecutive 'assistant' message, merge them.
     new_messages = []
-    if len(messages) == 1:
-        # check if the message is a user message
-        if messages[0]["role"] == "assistant":
-            new_messages.append({"role": "user", "content": ""})
-
-        # check if content is a list (vision)
-        if isinstance(messages[0]["content"], list):  # vision input
-            new_content = []
-            for m in messages[0]["content"]:
-                if m.get("type", "") == "image_url":
-                    new_content.append(
-                        {
-                            "type": "image",
-                            "source": convert_to_anthropic_image_obj(
-                                m["image_url"]["url"]
-                            ),
-                        }
-                    )
-                elif m.get("type", "") == "text":
-                    new_content.append({"type": "text", "text": m["text"]})
-            new_messages.append({"role": messages[0]["role"], "content": new_content})  # type: ignore
-        else:
-            new_messages.append(
-                {"role": messages[0]["role"], "content": messages[0]["content"]}
-            )
-
-        return new_messages
-
-    for i in range(len(messages) - 1):  # type: ignore
-        if i == 0 and messages[i]["role"] == "assistant":
-            new_messages.append({"role": "user", "content": ""})
-        if isinstance(messages[i]["content"], list):  # vision input
-            new_content = []
-            for m in messages[i]["content"]:
-                if m.get("type", "") == "image_url":
-                    new_content.append(
-                        {
-                            "type": "image",
-                            "source": convert_to_anthropic_image_obj(
-                                m["image_url"]["url"]
-                            ),
-                        }
-                    )
-                elif m.get("type", "") == "text":
-                    new_content.append({"type": "text", "content": m["text"]})
-            new_messages.append({"role": messages[i]["role"], "content": new_content})  # type: ignore
-        else:
-            new_messages.append(
-                {"role": messages[i]["role"], "content": messages[i]["content"]}
-            )
-
-        if messages[i]["role"] == messages[i + 1]["role"]:
-            if messages[i]["role"] == "user":
-                new_messages.append({"role": "assistant", "content": ""})
+    msg_i = 0
+    while msg_i < len(messages):
+        user_content = []
+        ## MERGE CONSECUTIVE USER CONTENT ##
+        while msg_i < len(messages) and messages[msg_i]["role"] in user_message_types:
+            if isinstance(messages[msg_i]["content"], list):
+                for m in messages[msg_i]["content"]:
+                    if m.get("type", "") == "image_url":
+                        user_content.append(
+                            {
+                                "type": "image",
+                                "source": convert_to_anthropic_image_obj(
+                                    m["image_url"]["url"]
+                                ),
+                            }
+                        )
+                    elif m.get("type", "") == "text":
+                        user_content.append({"type": "text", "text": m["text"]})
             else:
-                new_messages.append({"role": "user", "content": ""})
+                # Tool message content will always be a string
+                user_content.append(
+                    {
+                        "type": "text",
+                        "text": (
+                            convert_to_anthropic_tool_result(messages[msg_i])
+                            if messages[msg_i]["role"] == "tool"
+                            else messages[msg_i]["content"]
+                        ),
+                    }
+                )
 
-        if messages[i]["role"] == "assistant":
-            last_assistant_message_idx = i
+            msg_i += 1
 
-    new_messages.append(messages[-1])
-    if last_assistant_message_idx is not None:
-        new_messages[last_assistant_message_idx]["content"] = new_messages[
-            last_assistant_message_idx
-        ][
-            "content"
-        ].strip()  # no trailing whitespace for final assistant message
+        if user_content:
+            new_messages.append({"role": "user", "content": user_content})
+
+        assistant_content = []
+        ## MERGE CONSECUTIVE ASSISTANT CONTENT ##
+        while msg_i < len(messages) and messages[msg_i]["role"] == "assistant":
+            assistant_text = (
+                messages[msg_i].get("content") or ""
+            )  # either string or none
+            if messages[msg_i].get(
+                "tool_calls", []
+            ):  # support assistant tool invoke convertion
+                assistant_text += convert_to_anthropic_tool_invoke(
+                    messages[msg_i]["tool_calls"]
+                )
+
+            assistant_content.append({"type": "text", "text": assistant_text})
+            msg_i += 1
+
+        if assistant_content:
+            new_messages.append({"role": "assistant", "content": assistant_content})
+
+    if new_messages[0]["role"] != "user":
+        if litellm.modify_params:
+            new_messages.insert(
+                0, {"role": "user", "content": [{"type": "text", "text": "."}]}
+            )
+        else:
+            raise Exception(
+                "Invalid first message. Should always start with 'role'='user' for Anthropic. System prompt is sent separately for Anthropic. set 'litellm.modify_params = True' or 'litellm_settings:modify_params = True' on proxy, to insert a placeholder user message - '.' as the first message, "
+            )
+
+    if new_messages[-1]["role"] == "assistant":
+        for content in new_messages[-1]["content"]:
+            if isinstance(content, dict) and content["type"] == "text":
+                content["text"] = content[
+                    "text"
+                ].rstrip()  # no trailing whitespace for final assistant message
 
     return new_messages
 
@@ -641,6 +725,10 @@ def extract_between_tags(tag: str, string: str, strip: bool = False) -> List[str
     if strip:
         ext_list = [e.strip() for e in ext_list]
     return ext_list
+
+
+def contains_tag(tag: str, string: str) -> bool:
+    return bool(re.search(f"<{tag}>(.+?)</{tag}>", string, re.DOTALL))
 
 
 def parse_xml_params(xml_content):
@@ -843,7 +931,7 @@ def gemini_text_image_pt(messages: list):
     }
     """
     try:
-        import google.generativeai as genai
+        import google.generativeai as genai  # type: ignore
     except:
         raise Exception(
             "Importing google.generativeai failed, please run 'pip install -q google-generativeai"
@@ -884,16 +972,14 @@ def azure_text_pt(messages: list):
 
 # Function call template
 def function_call_prompt(messages: list, functions: list):
-    function_prompt = (
-        "Produce JSON OUTPUT ONLY! The following functions are available to you:"
-    )
+    function_prompt = """Produce JSON OUTPUT ONLY! Adhere to this format {"name": "function_name", "arguments":{"argument_name": "argument_value"}} The following functions are available to you:"""
     for function in functions:
         function_prompt += f"""\n{function}\n"""
 
     function_added_to_prompt = False
     for message in messages:
         if "system" in message["role"]:
-            message["content"] += f"""{function_prompt}"""
+            message["content"] += f""" {function_prompt}"""
             function_added_to_prompt = True
 
     if function_added_to_prompt == False:

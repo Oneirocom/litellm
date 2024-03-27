@@ -158,7 +158,7 @@ def test_call_with_invalid_key(prisma_client):
 
         async def test():
             await litellm.proxy.proxy_server.prisma_client.connect()
-            generated_key = "bad-key"
+            generated_key = "sk-126666"
             bearer_token = "Bearer " + generated_key
 
             request = Request(scope={"type": "http"}, receive=None)
@@ -173,7 +173,7 @@ def test_call_with_invalid_key(prisma_client):
     except Exception as e:
         print("Got Exception", e)
         print(e.message)
-        assert "Authentication Error" in e.message
+        assert "Authentication Error, Invalid token passed" in e.message
         pass
 
 
@@ -318,7 +318,7 @@ def test_call_with_user_over_budget(prisma_client):
 
 
 def test_call_with_end_user_over_budget(prisma_client):
-    # Test if a user passed to /chat/completions is tracked & fails whe they cross their budget
+    # Test if a user passed to /chat/completions is tracked & fails when they cross their budget
     # we only check this when litellm.max_user_budget is set
     import random
 
@@ -338,6 +338,8 @@ def test_call_with_end_user_over_budget(prisma_client):
             user = f"ishaan {random.randint(0, 10000)}"
             request = Request(scope={"type": "http"})
             request._url = URL(url="/chat/completions")
+
+            result = await user_api_key_auth(request=request, api_key=bearer_token)
 
             async def return_body():
                 return_string = f'{{"model": "gemini-pro-vision", "user": "{user}"}}'

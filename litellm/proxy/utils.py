@@ -7,6 +7,10 @@ from litellm.proxy._types import (
     LiteLLM_VerificationToken,
     LiteLLM_VerificationTokenView,
     LiteLLM_SpendLogs,
+    LiteLLM_UserTable,
+    LiteLLM_EndUserTable,
+    LiteLLM_TeamTable,
+    Member,
 )
 from litellm.caching import DualCache
 from litellm.proxy.hooks.parallel_request_limiter import (
@@ -134,7 +138,17 @@ class ProxyLogging:
         except Exception as e:
             raise e
 
-    async def during_call_hook(self, data: dict):
+    async def during_call_hook(
+        self,
+        data: dict,
+        call_type: Literal[
+            "completion",
+            "embeddings",
+            "image_generation",
+            "moderation",
+            "audio_transcription",
+        ],
+    ):
         """
         Runs the CustomLogger's async_moderation_hook()
         """
@@ -142,7 +156,9 @@ class ProxyLogging:
             new_data = copy.deepcopy(data)
             try:
                 if isinstance(callback, CustomLogger):
-                    await callback.async_moderation_hook(data=new_data)
+                    await callback.async_moderation_hook(
+                        data=new_data, call_type=call_type
+                    )
             except Exception as e:
                 raise e
         return data
@@ -290,7 +306,7 @@ class ProxyLogging:
 
         # check if crossed budget
         if user_current_spend >= user_max_budget:
-            verbose_proxy_logger.debug(f"Budget Crossed for {user_info}")
+            verbose_proxy_logger.debug("Budget Crossed for %s", user_info)
             message = "Budget Crossed for" + user_info
             await self.alerting_handler(
                 message=message,
@@ -472,6 +488,12 @@ def on_backoff(details):
 
 
 class PrismaClient:
+    user_list_transactons: dict = {}
+    end_user_list_transactons: dict = {}
+    key_list_transactons: dict = {}
+    team_list_transactons: dict = {}
+    spend_log_transactons: List = []
+
     def __init__(self, database_url: str, proxy_logging_obj: ProxyLogging):
         print_verbose(
             "LiteLLM: DATABASE_URL Set in config, trying to 'pip install prisma'"
@@ -1039,7 +1061,7 @@ class PrismaClient:
         Add a key to the database. If it already exists, do nothing.
         """
         try:
-            verbose_proxy_logger.debug(f"PrismaClient: insert_data: {data}")
+            verbose_proxy_logger.debug("PrismaClient: insert_data: %s", data)
             if table_name == "key":
                 token = data["token"]
                 hashed_token = self.hash_token(token=token)
@@ -1057,7 +1079,7 @@ class PrismaClient:
                         "update": {},  # don't do anything if it already exists
                     },
                 )
-                verbose_proxy_logger.info(f"Data Inserted into Keys Table")
+                verbose_proxy_logger.info("Data Inserted into Keys Table")
                 return new_verification_token
             elif table_name == "user":
                 db_data = self.jsonify_object(data=data)
@@ -1068,7 +1090,7 @@ class PrismaClient:
                         "update": {},  # don't do anything if it already exists
                     },
                 )
-                verbose_proxy_logger.info(f"Data Inserted into User Table")
+                verbose_proxy_logger.info("Data Inserted into User Table")
                 return new_user_row
             elif table_name == "team":
                 db_data = self.jsonify_object(data=data)
@@ -1085,7 +1107,7 @@ class PrismaClient:
                         "update": {},  # don't do anything if it already exists
                     },
                 )
-                verbose_proxy_logger.info(f"Data Inserted into Team Table")
+                verbose_proxy_logger.info("Data Inserted into Team Table")
                 return new_team_row
             elif table_name == "config":
                 """
@@ -1110,7 +1132,7 @@ class PrismaClient:
 
                     tasks.append(updated_table_row)
                 await asyncio.gather(*tasks)
-                verbose_proxy_logger.info(f"Data Inserted into Config Table")
+                verbose_proxy_logger.info("Data Inserted into Config Table")
             elif table_name == "spend":
                 db_data = self.jsonify_object(data=data)
                 new_spend_row = await self.db.litellm_spendlogs.upsert(
@@ -1120,7 +1142,7 @@ class PrismaClient:
                         "update": {},  # don't do anything if it already exists
                     },
                 )
-                verbose_proxy_logger.info(f"Data Inserted into Spend Table")
+                verbose_proxy_logger.info("Data Inserted into Spend Table")
                 return new_spend_row
             elif table_name == "user_notification":
                 db_data = self.jsonify_object(data=data)
@@ -1133,7 +1155,7 @@ class PrismaClient:
                         },
                     )
                 )
-                verbose_proxy_logger.info(f"Data Inserted into Model Request Table")
+                verbose_proxy_logger.info("Data Inserted into Model Request Table")
                 return new_user_notification_row
 
         except Exception as e:
@@ -1383,7 +1405,7 @@ class PrismaClient:
                 deleted_tokens = await self.db.litellm_verificationtoken.delete_many(
                     where=filter_query  # type: ignore
                 )
-                verbose_proxy_logger.debug(f"deleted_tokens: {deleted_tokens}")
+                verbose_proxy_logger.debug("deleted_tokens: %s", deleted_tokens)
                 return {"deleted_keys": deleted_tokens}
             elif (
                 table_name == "team"
@@ -1596,7 +1618,6 @@ async def _cache_user_row(
     Check if a user_id exists in cache,
     if not retrieve it.
     """
-    print_verbose(f"Prisma: _cache_user_row, user_id: {user_id}")
     cache_key = f"{user_id}_user_api_key_user_id"
     response = cache.get_cache(key=cache_key)
     if response is None:  # Cache miss
@@ -1747,7 +1768,7 @@ def get_logging_payload(kwargs, response_obj, start_time, end_time):
         "api_base": litellm_params.get("api_base", ""),
     }
 
-    verbose_proxy_logger.debug(f"SpendTable: created payload - payload: {payload}\n\n")
+    verbose_proxy_logger.debug("SpendTable: created payload - payload: %s\n\n", payload)
     json_fields = [
         field
         for field, field_type in LiteLLM_SpendLogs.__annotations__.items()
@@ -1840,6 +1861,144 @@ async def reset_budget(prisma_client: PrismaClient):
             await prisma_client.update_data(
                 query_type="update_many", data_list=users_to_reset, table_name="user"
             )
+
+
+async def update_spend(
+    prisma_client: PrismaClient,
+):
+    """
+    Batch write updates to db.
+
+    Triggered every minute.
+
+    Requires:
+    user_id_list: dict,
+    keys_list: list,
+    team_list: list,
+    spend_logs: list,
+    """
+    n_retry_times = 3
+    ### UPDATE USER TABLE ###
+    if len(prisma_client.user_list_transactons.keys()) > 0:
+        for i in range(n_retry_times + 1):
+            try:
+                async with prisma_client.db.tx(
+                    timeout=timedelta(seconds=60)
+                ) as transaction:
+                    async with transaction.batch_() as batcher:
+                        for (
+                            user_id,
+                            response_cost,
+                        ) in prisma_client.user_list_transactons.items():
+                            batcher.litellm_usertable.update_many(
+                                where={"user_id": user_id},
+                                data={"spend": {"increment": response_cost}},
+                            )
+                prisma_client.user_list_transactons = (
+                    {}
+                )  # Clear the remaining transactions after processing all batches in the loop.
+            except httpx.ReadTimeout:
+                if i >= n_retry_times:  # If we've reached the maximum number of retries
+                    raise  # Re-raise the last exception
+                # Optionally, sleep for a bit before retrying
+                await asyncio.sleep(2**i)  # Exponential backoff
+            except Exception as e:
+                raise e
+
+    ### UPDATE END-USER TABLE ###
+    if len(prisma_client.end_user_list_transactons.keys()) > 0:
+        for i in range(n_retry_times + 1):
+            try:
+                async with prisma_client.db.tx(
+                    timeout=timedelta(seconds=60)
+                ) as transaction:
+                    async with transaction.batch_() as batcher:
+                        for (
+                            end_user_id,
+                            response_cost,
+                        ) in prisma_client.end_user_list_transactons.items():
+                            max_user_budget = None
+                            if litellm.max_user_budget is not None:
+                                max_user_budget = litellm.max_user_budget
+                            new_user_obj = LiteLLM_EndUserTable(
+                                user_id=end_user_id, spend=response_cost, blocked=False
+                            )
+                            batcher.litellm_endusertable.update_many(
+                                where={"user_id": end_user_id},
+                                data={"spend": {"increment": response_cost}},
+                            )
+                prisma_client.end_user_list_transactons = (
+                    {}
+                )  # Clear the remaining transactions after processing all batches in the loop.
+            except httpx.ReadTimeout:
+                if i >= n_retry_times:  # If we've reached the maximum number of retries
+                    raise  # Re-raise the last exception
+                # Optionally, sleep for a bit before retrying
+                await asyncio.sleep(2**i)  # Exponential backoff
+            except Exception as e:
+                raise e
+
+    ### UPDATE KEY TABLE ###
+    if len(prisma_client.key_list_transactons.keys()) > 0:
+        for i in range(n_retry_times + 1):
+            try:
+                async with prisma_client.db.tx(
+                    timeout=timedelta(seconds=60)
+                ) as transaction:
+                    async with transaction.batch_() as batcher:
+                        for (
+                            token,
+                            response_cost,
+                        ) in prisma_client.key_list_transactons.items():
+                            batcher.litellm_verificationtoken.update_many(  # 'update_many' prevents error from being raised if no row exists
+                                where={"token": token},
+                                data={"spend": {"increment": response_cost}},
+                            )
+                prisma_client.key_list_transactons = (
+                    {}
+                )  # Clear the remaining transactions after processing all batches in the loop.
+            except httpx.ReadTimeout:
+                if i >= n_retry_times:  # If we've reached the maximum number of retries
+                    raise  # Re-raise the last exception
+                # Optionally, sleep for a bit before retrying
+                await asyncio.sleep(2**i)  # Exponential backoff
+            except Exception as e:
+                raise e
+
+    ### UPDATE TEAM TABLE ###
+    if len(prisma_client.team_list_transactons.keys()) > 0:
+        for i in range(n_retry_times + 1):
+            try:
+                async with prisma_client.db.tx(
+                    timeout=timedelta(seconds=60)
+                ) as transaction:
+                    async with transaction.batch_() as batcher:
+                        for (
+                            team_id,
+                            response_cost,
+                        ) in prisma_client.team_list_transactons.items():
+                            batcher.litellm_teamtable.update_many(  # 'update_many' prevents error from being raised if no row exists
+                                where={"team_id": team_id},
+                                data={"spend": {"increment": response_cost}},
+                            )
+                prisma_client.team_list_transactons = (
+                    {}
+                )  # Clear the remaining transactions after processing all batches in the loop.
+            except httpx.ReadTimeout:
+                if i >= n_retry_times:  # If we've reached the maximum number of retries
+                    raise  # Re-raise the last exception
+                # Optionally, sleep for a bit before retrying
+                await asyncio.sleep(2**i)  # Exponential backoff
+            except Exception as e:
+                raise e
+
+
+async def monitor_spend_list(prisma_client: PrismaClient):
+    """
+    Check the length of each spend list, if it exceeds a threshold (e.g. 100 items) - write to db
+    """
+    if len(prisma_client.user_list_transactons) > 10000:
+        await update_spend(prisma_client=prisma_client)
 
 
 async def _read_request_body(request):

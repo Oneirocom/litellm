@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from litellm.utils import ModelResponse, Usage, map_finish_reason, CustomStreamWrapper
 import litellm
 from .prompt_templates.factory import (
+    contains_tag,
     prompt_factory,
     custom_prompt,
     construct_tool_use_system_prompt,
@@ -130,18 +131,24 @@ def completion(
         )
     else:
         # Separate system prompt from rest of message
-        system_prompt_idx: Optional[int] = None
+        system_prompt_indices = []
+        system_prompt = ""
         for idx, message in enumerate(messages):
             if message["role"] == "system":
-                optional_params["system"] = message["content"]
-                system_prompt_idx = idx
-                break
-        if system_prompt_idx is not None:
-            messages.pop(system_prompt_idx)
+                system_prompt += message["content"]
+                system_prompt_indices.append(idx)
+        if len(system_prompt_indices) > 0:
+            for idx in reversed(system_prompt_indices):
+                messages.pop(idx)
+        if len(system_prompt) > 0:
+            optional_params["system"] = system_prompt
         # Format rest of message according to anthropic guidelines
-        messages = prompt_factory(
-            model=model, messages=messages, custom_llm_provider="anthropic"
-        )
+        try:
+            messages = prompt_factory(
+                model=model, messages=messages, custom_llm_provider="anthropic"
+            )
+        except Exception as e:
+            raise AnthropicError(status_code=400, message=str(e))
 
     ## Load Config
     config = litellm.AnthropicConfig.get_config()
@@ -235,7 +242,7 @@ def completion(
         else:
             text_content = completion_response["content"][0].get("text", None)
             ## TOOL CALLING - OUTPUT PARSE
-            if text_content is not None and "invoke" in text_content:
+            if text_content is not None and contains_tag("invoke", text_content):
                 function_name = extract_between_tags("tool_name", text_content)[0]
                 function_arguments_str = extract_between_tags("invoke", text_content)[
                     0
@@ -294,7 +301,7 @@ def completion(
                 )
                 streaming_choice.delta = delta_obj
                 streaming_model_response.choices = [streaming_choice]
-                completion_stream = model_response_iterator(
+                completion_stream = ModelResponseIterator(
                     model_response=streaming_model_response
                 )
                 print_verbose(
@@ -323,8 +330,30 @@ def completion(
         return model_response
 
 
-def model_response_iterator(model_response):
-    yield model_response
+class ModelResponseIterator:
+    def __init__(self, model_response):
+        self.model_response = model_response
+        self.is_done = False
+
+    # Sync iterator
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.is_done:
+            raise StopIteration
+        self.is_done = True
+        return self.model_response
+
+    # Async iterator
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.is_done:
+            raise StopAsyncIteration
+        self.is_done = True
+        return self.model_response
 
 
 def embedding():

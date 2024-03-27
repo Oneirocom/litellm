@@ -115,24 +115,54 @@ class LiteLLM:
         default_headers: Optional[Mapping[str, str]] = None,
     ):
         self.params = locals()
-        self.chat = Chat(self.params)
+        self.chat = Chat(self.params, router_obj=None)
 
 
 class Chat:
-    def __init__(self, params):
+    def __init__(self, params, router_obj: Optional[Any]):
         self.params = params
-        self.completions = Completions(self.params)
+        if self.params.get("acompletion", False) == True:
+            self.params.pop("acompletion")
+            self.completions: Union[AsyncCompletions, Completions] = AsyncCompletions(
+                self.params, router_obj=router_obj
+            )
+        else:
+            self.completions = Completions(self.params, router_obj=router_obj)
 
 
 class Completions:
-    def __init__(self, params):
+    def __init__(self, params, router_obj: Optional[Any]):
         self.params = params
+        self.router_obj = router_obj
 
     def create(self, messages, model=None, **kwargs):
         for k, v in kwargs.items():
             self.params[k] = v
         model = model or self.params.get("model")
-        response = completion(model=model, messages=messages, **self.params)
+        if self.router_obj is not None:
+            response = self.router_obj.completion(
+                model=model, messages=messages, **self.params
+            )
+        else:
+            response = completion(model=model, messages=messages, **self.params)
+        return response
+
+
+class AsyncCompletions:
+    def __init__(self, params, router_obj: Optional[Any]):
+        self.params = params
+        self.router_obj = router_obj
+
+    async def create(self, messages, model=None, **kwargs):
+        for k, v in kwargs.items():
+            self.params[k] = v
+        model = model or self.params.get("model")
+        if self.router_obj is not None:
+            response = await self.router_obj.acompletion(
+                model=model, messages=messages, **self.params
+            )
+        else:
+            response = await acompletion(model=model, messages=messages, **self.params)
         return response
 
 
@@ -195,10 +225,10 @@ async def acompletion(
         api_version (str, optional): API version (default is None).
         api_key (str, optional): API key (default is None).
         model_list (list, optional): List of api base, version, keys
+        timeout (float, optional): The maximum execution time in seconds for the completion request.
 
         LITELLM Specific Params
         mock_response (str, optional): If provided, return a mock completion response for testing or debugging purposes (default is None).
-        force_timeout (int, optional): The maximum execution time in seconds for the completion request (default is 600).
         custom_llm_provider (str, optional): Used for Non-OpenAI LLMs, Example usage for bedrock, set model="amazon.titan-tg1-large" and custom_llm_provider="bedrock"
     Returns:
         ModelResponse: A response object containing the generated completion and associated metadata.
@@ -571,6 +601,7 @@ def completion(
         "ttl",
         "cache",
         "no-log",
+        "base_model",
     ]
     default_params = openai_params + litellm_params
     non_default_params = {
@@ -891,6 +922,7 @@ def completion(
             or custom_llm_provider == "mistral"
             or custom_llm_provider == "openai"
             or custom_llm_provider == "together_ai"
+            or custom_llm_provider in litellm.openai_compatible_providers
             or "ft:gpt-3.5-turbo" in model  # finetune gpt-3.5-turbo
         ):  # allow user to make an openai call with a custom base
             # note: if a user sets a custom base - we should ensure this works
@@ -1751,7 +1783,11 @@ def completion(
                 timeout=timeout,
             )
 
-            if "stream" in optional_params and optional_params["stream"] == True:
+            if (
+                "stream" in optional_params
+                and optional_params["stream"] == True
+                and not isinstance(response, CustomStreamWrapper)
+            ):
                 # don't try to access stream object,
                 if "ai21" in model:
                     response = CustomStreamWrapper(
@@ -1779,9 +1815,11 @@ def completion(
             ## RESPONSE OBJECT
             response = response
         elif custom_llm_provider == "vllm":
+            custom_prompt_dict = custom_prompt_dict or litellm.custom_prompt_dict
             model_response = vllm.completion(
                 model=model,
                 messages=messages,
+                custom_prompt_dict=custom_prompt_dict,
                 model_response=model_response,
                 print_verbose=print_verbose,
                 optional_params=optional_params,
@@ -2393,6 +2431,7 @@ async def aembedding(*args, **kwargs):
             or custom_llm_provider == "deepinfra"
             or custom_llm_provider == "perplexity"
             or custom_llm_provider == "groq"
+            or custom_llm_provider == "fireworks_ai"
             or custom_llm_provider == "ollama"
             or custom_llm_provider == "vertex_ai"
         ):  # currently implemented aiohttp calls for just azure and openai, soon all.
@@ -2609,7 +2648,7 @@ def embedding(
                 api_version or litellm.api_version or get_secret("AZURE_API_VERSION")
             )
 
-            azure_ad_token = kwargs.pop("azure_ad_token", None) or get_secret(
+            azure_ad_token = optional_params.pop("azure_ad_token", None) or get_secret(
                 "AZURE_AD_TOKEN"
             )
 
@@ -2750,6 +2789,12 @@ def embedding(
                 model_response=EmbeddingResponse(),
             )
         elif custom_llm_provider == "ollama":
+            api_base = (
+                litellm.api_base
+                or api_base
+                or get_secret("OLLAMA_API_BASE")
+                or "http://localhost:11434"
+            )
             ollama_input = None
             if isinstance(input, list) and len(input) > 1:
                 raise litellm.BadRequestError(
@@ -2770,6 +2815,7 @@ def embedding(
 
             if aembedding == True:
                 response = ollama.ollama_aembeddings(
+                    api_base=api_base,
                     model=model,
                     prompt=ollama_input,
                     encoding=encoding,
@@ -2892,6 +2938,7 @@ async def atext_completion(*args, **kwargs):
             or custom_llm_provider == "deepinfra"
             or custom_llm_provider == "perplexity"
             or custom_llm_provider == "groq"
+            or custom_llm_provider == "fireworks_ai"
             or custom_llm_provider == "text-completion-openai"
             or custom_llm_provider == "huggingface"
             or custom_llm_provider == "ollama"
@@ -3682,11 +3729,12 @@ async def ahealth_check(
                 response = {}  # args like remaining ratelimit etc.
         return response
     except Exception as e:
+        traceback.print_exc()
         if model not in litellm.model_cost and mode is None:
             raise Exception(
                 "Missing `mode`. Set the `mode` for the model - https://docs.litellm.ai/docs/proxy/health#embedding-models"
             )
-        return {"error": str(e)}
+        return {"error": f"{str(e)}"}
 
 
 ####### HELPER FUNCTIONS ################

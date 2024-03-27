@@ -3,7 +3,7 @@ import threading, requests, os
 from typing import Callable, List, Optional, Dict, Union, Any
 from litellm.caching import Cache
 from litellm._logging import set_verbose, _turn_on_debug, verbose_logger
-from litellm.proxy._types import KeyManagementSystem
+from litellm.proxy._types import KeyManagementSystem, KeyManagementSettings
 import httpx
 import dotenv
 
@@ -36,6 +36,7 @@ token: Optional[str] = (
 telemetry = True
 max_tokens = 256  # OpenAI Defaults
 drop_params = False
+modify_params = False
 retry = True
 api_key: Optional[str] = None
 openai_key: Optional[str] = None
@@ -55,6 +56,7 @@ baseten_key: Optional[str] = None
 aleph_alpha_key: Optional[str] = None
 nlp_cloud_key: Optional[str] = None
 use_client: bool = False
+disable_streaming_logging: bool = False
 ### GUARDRAILS ###
 llamaguard_model_name: Optional[str] = None
 presidio_ad_hoc_recognizers: Optional[str] = None
@@ -186,6 +188,7 @@ secret_manager_client: Optional[Any] = (
 )
 _google_kms_resource_name: Optional[str] = None
 _key_management_system: Optional[KeyManagementSystem] = None
+_key_management_settings: Optional[KeyManagementSettings] = None
 #### PII MASKING ####
 output_parse_pii: bool = False
 #############################################
@@ -326,6 +329,7 @@ openai_compatible_providers: List = [
     "perplexity",
     "xinference",
     "together_ai",
+    "fireworks_ai",
 ]
 
 
@@ -477,6 +481,7 @@ provider_list: List = [
     "voyage",
     "cloudflare",
     "xinference",
+    "fireworks_ai",
     "custom",  # custom apis
 ]
 

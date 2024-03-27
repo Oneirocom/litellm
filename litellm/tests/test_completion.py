@@ -76,6 +76,8 @@ def test_completion_claude():
         print(response["usage"]["completion_tokens"])
         # print("new cost tracking")
     except Exception as e:
+        if "overloaded_error" in str(e):
+            pass
         pytest.fail(f"Error occurred: {e}")
 
 
@@ -102,7 +104,20 @@ def test_completion_claude_3_empty_response():
 
 def test_completion_claude_3():
     litellm.set_verbose = True
-    messages = [{"role": "user", "content": "Hello, world"}]
+    messages = [
+        {
+            "role": "user",
+            "content": "\nWhat is the query for `console.log` => `console.error`\n",
+        },
+        {
+            "role": "assistant",
+            "content": "\nThis is the GritQL query for the given before/after examples:\n<gritql>\n`console.log` => `console.error`\n</gritql>\n",
+        },
+        {
+            "role": "user",
+            "content": "\nWhat is the query for `console.info` => `consdole.heaven`\n",
+        },
+    ]
     try:
         # test without max tokens
         response = completion(
@@ -152,6 +167,53 @@ def test_completion_claude_3_function_call():
         assert isinstance(
             response.choices[0].message.tool_calls[0].function.arguments, str
         )
+
+        messages.append(
+            response.choices[0].message.model_dump()
+        )  # Add assistant tool invokes
+        tool_result = (
+            '{"location": "Boston", "temperature": "72", "unit": "fahrenheit"}'
+        )
+        # Add user submitted tool results in the OpenAI format
+        messages.append(
+            {
+                "tool_call_id": response.choices[0].message.tool_calls[0].id,
+                "role": "tool",
+                "name": response.choices[0].message.tool_calls[0].function.name,
+                "content": tool_result,
+            }
+        )
+        # In the second response, Claude should deduce answer from tool results
+        second_response = completion(
+            model="anthropic/claude-3-opus-20240229",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+        print(second_response)
+    except Exception as e:
+        pytest.fail(f"Error occurred: {e}")
+
+
+def test_completion_claude_3_multi_turn_conversations():
+    litellm.set_verbose = True
+    litellm.modify_params = True
+    messages = [
+        {"role": "assistant", "content": "?"},  # test first user message auto injection
+        {"role": "user", "content": "Hi!"},
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "What is the weather like today?"}],
+        },
+        {"role": "assistant", "content": "Hi! I am Claude. "},
+        {"role": "assistant", "content": "Today is a sunny "},
+    ]
+    try:
+        response = completion(
+            model="anthropic/claude-3-opus-20240229",
+            messages=messages,
+        )
+        print(response)
     except Exception as e:
         pytest.fail(f"Error occurred: {e}")
 
@@ -312,7 +374,7 @@ def test_completion_mistral_azure():
                 }
             ],
         )
-        # Add any assertions here to check the response
+        # Add any assertions here to check, the response
         print(response)
 
     except Exception as e:
@@ -529,6 +591,25 @@ def test_completion_azure_gpt4_vision():
 # test_completion_azure_gpt4_vision()
 
 
+def test_completion_fireworks_ai():
+    try:
+        litellm.set_verbose = True
+        messages = [
+            {"role": "system", "content": "You're a good bot"},
+            {
+                "role": "user",
+                "content": "Hey",
+            },
+        ]
+        response = completion(
+            model="fireworks_ai/accounts/fireworks/models/mixtral-8x7b-instruct",
+            messages=messages,
+        )
+        print(response)
+    except Exception as e:
+        pytest.fail(f"Error occurred: {e}")
+
+
 @pytest.mark.skip(reason="this test is flaky")
 def test_completion_perplexity_api():
     try:
@@ -580,7 +661,7 @@ def test_completion_perplexity_api_2():
 
 # test_completion_perplexity_api_2()
 
-# commenting out as this is a flaky test on circle ci
+# commenting out as this is a flaky test on circle-ci
 # def test_completion_nlp_cloud():
 #     try:
 #         messages = [
