@@ -342,23 +342,20 @@ class ModelParams(LiteLLMBase):
         return values
 
 
-class GenerateRequestBase(LiteLLMBase):
-    """
-    Overlapping schema between key and user generate/update requests
-    """
-
-    models: Optional[list] = []
+class GenerateRequestBase(BaseModel):
+    models: Optional[List[str]] = []
     spend: Optional[float] = 0
     max_budget: Optional[float] = None
     user_id: Optional[str] = None
     team_id: Optional[str] = None
     max_parallel_requests: Optional[int] = None
-    metadata: Optional[dict] = {}
+    metadata: Optional[Dict] = {}
     tpm_limit: Optional[int] = None
     rpm_limit: Optional[int] = None
     budget_duration: Optional[str] = None
-    allowed_cache_controls: Optional[list] = []
+    allowed_cache_controls: Optional[List[str]] = []
     soft_budget: Optional[float] = None
+
 
 
 class GenerateKeyRequest(GenerateRequestBase):
@@ -374,13 +371,13 @@ class GenerateKeyRequest(GenerateRequestBase):
     class Config:
         protected_namespaces = ()
 
-
-class GenerateKeyResponse(GenerateKeyRequest):
+class GenerateKeyResponse(BaseModel):
     key: str
     key_name: Optional[str] = None
     expires: Optional[datetime]
     user_id: Optional[str] = None
     token_id: Optional[str] = None
+    budget_reset_at: Optional[datetime] = None  # Include this to show when the budget resets
 
     @root_validator(pre=True)
     def set_model_info(cls, values):
@@ -426,15 +423,13 @@ class LiteLLM_ModelTable(LiteLLMBase):
         protected_namespaces = ()
 
 
-class NewUserRequest(GenerateKeyRequest):
-    max_budget: Optional[float] = None
+class NewUserRequest(GenerateRequestBase):
     user_email: Optional[str] = None
     user_role: Optional[str] = None
-    teams: Optional[list] = None
+    user_alias: Optional[str] = None
+    teams: Optional[List[str]] = None
     organization_id: Optional[str] = None
-    auto_create_key: bool = (
-        True  # flag used for returning a key as part of the /user/new response
-    )
+    auto_create_key: bool = True  # flag used for returning a key as part of the /user/new response
 
 
 class NewUserResponse(GenerateKeyResponse):
