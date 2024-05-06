@@ -5016,12 +5016,16 @@ async def new_user(data: NewUserRequest):
 
     Parameters:
     - user_id: Optional[str] - Specify a user id. If not set, a unique id will be generated.
+    - user_alias: Optional[str] - A descriptive name for you to know who this user id refers to.
+    - teams: Optional[list] - specify a list of team id's a user belongs to.
+    - organization_id: Optional[str] - specify the org a user belongs to.
     - user_email: Optional[str] - Specify a user email.
     - user_role: Optional[str] - Specify a user role - "admin", "app_owner", "app_user"
     - max_budget: Optional[float] - Specify max budget for a given user.
     - models: Optional[list] - Model_name's a user is allowed to call. (if empty, key is allowed to call all models)
     - tpm_limit: Optional[int] - Specify tpm limit for a given user (Tokens per minute)
     - rpm_limit: Optional[int] - Specify rpm limit for a given user (Requests per minute)
+    - auto_create_key: bool - Default=True. Flag used for returning a key as part of the /user/new response
 
     Returns:
     - key: (str) The generated api key for the user
@@ -5033,19 +5037,45 @@ async def new_user(data: NewUserRequest):
     if "user_role" in data_json:
         user_role = data_json["user_role"]
         if user_role is not None:
-            if user_role not in ["admin", "app_owner", "app_user"]:
+            if user_role not in ["proxy_admin", "app_owner", "app_user"]:
                 raise ProxyException(
                     message=f"Invalid user role, passed in {user_role}. Must be one of 'admin', 'app_owner', 'app_user'",
                     type="invalid_user_role",
                     param="user_role",
                     code=status.HTTP_400_BAD_REQUEST,
                 )
-    response = await generate_key_helper_fn(**data_json)
+    if "user_id" in data_json and data_json["user_id"] is None:
+        data_json["user_id"] = str(uuid.uuid4())
+    auto_create_key = data_json.pop("auto_create_key", True)
+    if auto_create_key == False:
+        data_json["table_name"] = (
+            "user"  # only create a user, don't create key if 'auto_create_key' set to False
+        )
+    response = await generate_key_helper_fn(data=NewUserRequest(**data_json))
+
+    # Admin UI Logic
+    # if team_id passed add this user to the team
+    if data_json.get("team_id", None) is not None:
+        await team_member_add(
+            data=TeamMemberAddRequest(
+                team_id=data_json.get("team_id", None),
+                member=Member(
+                    user_id=data_json.get("user_id", None),
+                    role="user",
+                    user_email=data_json.get("user_email", None),
+                ),
+            )
+        )
     return NewUserResponse(
-        key=response["token"],
-        expires=response["expires"],
-        user_id=response["user_id"],
+        key=response.get("token", ""),
+        expires=response.get("expires", None),
         max_budget=response["max_budget"],
+        user_id=response["user_id"],
+        team_id=response.get("team_id", None),
+        metadata=response.get("metadata", None),
+        models=response.get("models", None),
+        tpm_limit=response.get("tpm_limit", None),
+        rpm_limit=response.get("rpm_limit", None),
     )
 
 
