@@ -16,7 +16,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: Install dependencies
         run: |
@@ -27,7 +27,7 @@ jobs:
         uses: BerriAI/locust-github-action@master
         with:
           LOCUSTFILE: ".github/workflows/locustfile.py"
-          URL:  "https://litellm-database-docker-build-production.up.railway.app/"
+          URL: "https://litellm-database-docker-build-production.up.railway.app/"
           USERS: "100"
           RATE: "10"
           RUNTIME: "300s"

@@ -3733,6 +3733,7 @@ def get_model_params_and_category(model_name):
         params_match = params_match.group(1)
         params_match = params_match.replace("b", "")
         params_billion = float(params_match)
+
         # Determine the category based on the number of parameters
         if params_billion <= 3.0:
             category = "together-ai-up-to-3b"

@@ -5846,12 +5846,16 @@ async def new_user(data: NewUserRequest):
     - user_alias: Optional[str] - A descriptive name for you to know who this user id refers to.
     - teams: Optional[list] - specify a list of team id's a user belongs to.
     - organization_id: Optional[str] - specify the org a user belongs to.
+    - user_alias: Optional[str] - A descriptive name for you to know who this user id refers to.
+    - teams: Optional[list] - specify a list of team id's a user belongs to.
+    - organization_id: Optional[str] - specify the org a user belongs to.
     - user_email: Optional[str] - Specify a user email.
     - user_role: Optional[str] - Specify a user role - "admin", "app_owner", "app_user"
     - max_budget: Optional[float] - Specify max budget for a given user.
     - models: Optional[list] - Model_name's a user is allowed to call. (if empty, key is allowed to call all models)
     - tpm_limit: Optional[int] - Specify tpm limit for a given user (Tokens per minute)
     - rpm_limit: Optional[int] - Specify rpm limit for a given user (Requests per minute)
+    - auto_create_key: bool - Default=True. Flag used for returning a key as part of the /user/new response
     - auto_create_key: bool - Default=True. Flag used for returning a key as part of the /user/new response
 
     Returns:

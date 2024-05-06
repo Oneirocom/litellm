@@ -12,16 +12,13 @@ Features here are behind a commercial license in our `/enterprise` folder. [**Se
 :::
 
 Features: 
-- ✅ [SSO for Admin UI](./ui.md#✨-enterprise-features)
-- ✅ Content Moderation with LLM Guard
+- ✅ Prompt Injection Detection
 - ✅ Content Moderation with LlamaGuard 
 - ✅ Content Moderation with Google Text Moderations 
 - ✅ Reject calls from Blocked User list 
 - ✅ Reject calls (incoming / outgoing) with Banned Keywords (e.g. competitors)
 - ✅ Don't log/store specific requests to Langfuse, Sentry, etc. (eg confidential LLM requests)
 - ✅ Tracking Spend for Custom Tags
-
-
 
 
 ## Content Moderation

@@ -2685,6 +2685,12 @@
         "supports_function_calling": true,
         "supports_parallel_function_calling": true
     },
+    "together_ai/togethercomputer/llama-2-70b-chat": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
     "together_ai/mistralai/Mistral-7B-Instruct-v0.1": {
         "litellm_provider": "together_ai",
         "supports_function_calling": true,
@@ -2695,6 +2701,127 @@
         "supports_function_calling": true,
         "supports_parallel_function_calling": true
     },
+    "together_ai/togethercomputer/llama-2-70b": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/togethercomputer/LLaMA-2-7B-32K": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/togethercomputer/llama-2-7b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/togethercomputer/alpaca-7b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/togethercomputer/CodeLlama-34b-Python": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/WizardLM/WizardCoder-Python-34B-V1.0": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "code"
+      },
+      "together_ai/Austism/chronos-hermes-13b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/NousResearch/Nous-Hermes-Llama2-13b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "together_ai/WizardLM/WizardCoder-15B-V1.0": {
+        "input_cost_per_token": 4e-7,
+        "output_cost_per_token": 4e-7,
+        "litellm_provider": "together_ai",
+        "mode": "code"
+      },
+      "togethercomputer/llama-2-70b-chat": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "togethercomputer/llama-2-70b": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "togethercomputer/LLaMA-2-7B-32K": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "togethercomputer/llama-2-7b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "togethercomputer/alpaca-7b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "togethercomputer/CodeLlama-34b-Instruct": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "supports_function_calling": true,
+        "supports_parallel_function_calling": true
+      },
+      "togethercomputer/CodeLlama-34b-Python": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "WizardLM/WizardCoder-Python-34B-V1.0": {
+        "input_cost_per_token": 9e-7,
+        "output_cost_per_token": 9e-7,
+        "litellm_provider": "together_ai",
+        "mode": "code"
+      },
+      "Austism/chronos-hermes-13b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "NousResearch/Nous-Hermes-Llama2-13b": {
+        "input_cost_per_token": 2e-7,
+        "output_cost_per_token": 2e-7,
+        "litellm_provider": "together_ai",
+        "mode": "chat"
+      },
+      "WizardLM/WizardCoder-15B-V1.0": {
+        "input_cost_per_token": 4e-7,
+        "output_cost_per_token": 4e-7,
+        "litellm_provider": "together_ai",
+        "mode": "code"
+      },
     "ollama/llama2": {
         "max_tokens": 4096, 
         "max_input_tokens": 4096, 
